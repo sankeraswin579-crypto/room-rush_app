@@ -1,5 +1,10 @@
 const $ = id => document.getElementById(id);
-const socket = io();
+const socket = io({
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 2000,
+  timeout: 20000
+});
 let current = null, playerId = null, roomCode = "", playerToken = sessionStorage.getItem("roomRushPlayerToken") || "", isHost = false, chosen = false, clock = null, reconnecting = false;
 const letters = ["A","B","C","D"];
 function setError(id, msg=""){ $(id).textContent = msg; }

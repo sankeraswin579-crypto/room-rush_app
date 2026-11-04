@@ -3,3 +3,16 @@ release/
 dist/
 .env
 .DS_Store
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+build/
+release/
+out/
+.builder-cache/
+.electron-cache/
+*.log
+.DS_Store
+Thumbs.db

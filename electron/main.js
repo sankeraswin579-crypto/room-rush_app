@@ -2,7 +2,7 @@ const { app, BrowserWindow, dialog } = require("electron");
 const { startServer } = require("../server");
 let serverHandle;
 async function createWindow() {
-  const remoteUrl = process.env.ROOM_RUSH_SERVER_URL;
+  const remoteUrl = process.env.ROOM_RUSH_SERVER_URL || "https://room-rush-app.onrender.com";
   let url = remoteUrl;
   if (!url) {
     serverHandle = await startServer({ port: 0, host: "127.0.0.1" });

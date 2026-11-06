@@ -1,6 +1,6 @@
 {
   "name": "room-rush-desktop",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Room Rush real-time multiplayer trivia game for desktop and browser",
   "main": "electron/main.js",
   "author": "Aswin Sankar P S",
@@ -8,22 +8,22 @@
   "scripts": {
     "start": "node server.js",
     "desktop": "electron .",
-    "build:win": "electron-builder --win nsis",
+    "build:win": "electron-builder --win portable --config.directories.output=release-portable",
     "test": "node --test"
   },
   "dependencies": {
-    "express": "^4.21.2",
-    "socket.io": "^4.8.1"
+    "express": "^4.22.3",
+    "socket.io": "^4.8.4"
   },
   "devDependencies": {
-    "electron": "^34.3.0",
-    "electron-builder": "^25.1.8"
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
   },
   "build": {
     "appId": "com.aswinsankar.roomrush",
     "productName": "Room Rush",
     "directories": {
-      "output": "release"
+      "output": "release-portable"
     },
     "files": [
       "electron/**/*",
@@ -32,14 +32,10 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "target": "portable"
     }
   },
   "allowScripts": {
-    "electron@34.5.8": true
+    "electron@45.2.3": true
   }
 }

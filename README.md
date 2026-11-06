@@ -6,7 +6,7 @@ The project explores real-time multiplayer application development, game-room ma
 
 ## 🚀 Project Overview
 
-Room Rush allows two players to create or join a trivia room using a room code, view the waiting room, and play a timed trivia match. The server enforces room codes, player limits, host permissions, and answer validity.
+Room Rush allows two or more players to create or join a trivia room using a room code, view the waiting room, and play a timed trivia match. The server enforces room codes, player limits, host permissions, and answer validity.
 
 The application runs locally through a Node.js server and can also be packaged as a Windows desktop application.
 
@@ -14,13 +14,13 @@ The application runs locally through a Node.js server and can also be packaged a
 
 - 🎮 Multiplayer trivia game concept
 - 🔑 Room codes for identifying game rooms
-- 👥 Two-player rooms and waiting-room interface
+- 👥 Party rooms for up to 20 players
 - ⚡ Real-time communication using Socket.IO
 - 🔄 Reconnection grace period with score and answer state preserved
 - 🛡️ Server-side validation for room codes, player membership, capacity, and answers
 - 🌐 Browser-based game interface
 - 🖥️ Windows desktop application powered by Electron
-- 📦 Windows installer generated using Electron Builder and NSIS
+- 📦 Portable Windows release generated using Electron Builder
 - 🎨 Dark, gaming-inspired user interface
 
 ## 🛠️ Technology Stack
@@ -83,7 +83,7 @@ A room code provides a convenient way to identify a game room and share joining 
 
 ### 3. Multiplayer Waiting Room
 
-The waiting room displays the host, player count, player names, and the waiting status before a game begins. The server only permits two connected players in a room.
+The waiting room displays the host, player count, player names, and the waiting status before a game begins. The server supports up to 20 connected players in a room.
 
 ### 4. Trivia Gameplay
 
@@ -91,7 +91,7 @@ Room Rush is designed around quiz-based multiplayer gameplay. The complete quest
 
 ### 5. Windows Desktop Application
 
-The application can be packaged and installed on Windows using Electron and Electron Builder.
+The application can be packaged as a portable Windows executable using Electron and Electron Builder.
 
 ### 6. Browser-Based Development
 
@@ -105,13 +105,11 @@ The server accepts only four-character room codes from the generated code alphab
 
 ### Option 1: Install the Windows Application
 
-Download or locate the generated Windows installer:
+Download the portable Windows build:
 
-`Room Rush Setup 1.0.0.exe`
+`release-portable/Room Rush 1.0.2.exe`
 
-Run the installer and follow the on-screen instructions.
-
-After installation, launch **Room Rush** from the Windows Start menu or desktop shortcut, if available.
+Run the executable to launch **Room Rush**.
 
 ### Option 2: Run from Source
 
@@ -176,8 +174,8 @@ The build uses Electron Builder with the NSIS installer target.
 The expected installer location is:
 
 ```text
-release/
-└── Room Rush Setup 1.0.0.exe
+release-portable/
+└── Room Rush 1.0.2.exe
 ```
 
 The packaged, unpacked application is expected under:
@@ -257,7 +255,7 @@ Review the reported vulnerabilities and update affected dependencies carefully. 
 
 ## 🌐 Online Multiplayer
 
-The current development workflow uses a local Node.js server. Rooms support two players.
+The current development workflow uses a local Node.js server. Rooms support two or more players.
 
 For players on different computers to join over the internet, the backend must be deployed to a publicly accessible host that supports persistent Node.js processes and Socket.IO connections.
 
@@ -319,3 +317,9 @@ See the project's `LICENSE` file for licensing terms.
 ---
 
 **Room Rush — Build your squad. Test your knowledge. Rush to victory!**
+
+## 20-player upgrade and deployment
+
+Room Rush now supports up to 20 players in a room. The browser client and Windows desktop client connect to the same online Node.js + Socket.IO service. See [DEPLOYMENT.md](DEPLOYMENT.md) for the shared-server configuration, Render environment variables, desktop endpoint configuration, and current production limitations.
+
+The current game service stores active rooms in memory. Deployments or server restarts can end active games; persistent rooms, player accounts, durable leaderboards, payment processing, and production-scale abuse controls remain planned work.

@@ -1,6 +1,6 @@
 {
   "name": "room-rush-desktop",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Room Rush real-time multiplayer trivia game for desktop and browser",
   "main": "electron/main.js",
   "author": "Aswin Sankar P S",
@@ -39,3 +39,4 @@
     "electron@45.2.3": true
   }
 }
+

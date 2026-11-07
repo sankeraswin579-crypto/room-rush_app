@@ -16,3 +16,6 @@ out/
 *.log
 .DS_Store
 Thumbs.db
+
+release-portable/
+release/

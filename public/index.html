@@ -1,39 +1,187 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Room Rush — Multiplayer Trivia</title>
-<link rel="stylesheet" href="/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Room Rush — Multiplayer Trivia Party</title>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<div class="glow glow-a"></div><div class="glow glow-b"></div>
-<header><a class="brand" href="#"><span class="brand-icon">RR</span><span>ROOM <b>RUSH</b><small>TRIVIA PARTY</small></span></a><div class="header-right"><span class="live-dot"></span> REAL-TIME MULTIPLAYER <button id="soundToggle" class="ghost sound-toggle" type="button" aria-pressed="true" title="Toggle game sounds">♫ SOUND ON</button></div></header>
-<main>
-<section id="home" class="home">
-<div class="eyebrow"><span>✦</span> FRIENDS. QUESTIONS. GLORY.</div>
-<h1>Think fast.<br><span>Play together.</span></h1>
-<p class="intro">The trivia party where every second counts. Create a room, invite your crew, and see who really knows it all.</p>
-<div class="panel">
-<label for="name">PLAYER NAME</label><input id="name" maxlength="18" placeholder="Enter your nickname" value="">
-<div class="game-options"><label for="rounds">ROUNDS<select id="rounds"><option value="5">Quick match · 5</option><option value="8" selected>Standard · 8</option><option value="12">Full match · 12</option></select></label><label for="mode">PACE<select id="mode"><option value="classic" selected>Classic · 15 sec</option><option value="blitz">Blitz · 9 sec</option><option value="relaxed">Relaxed · 25 sec</option></select></label></div>
-<div class="home-actions"><button id="createBtn" class="primary">＋ Create a room</button><div class="join-group"><input id="roomCode" maxlength="4" placeholder="ROOM CODE" autocomplete="off"><button id="joinBtn" class="secondary">Join ↗</button></div></div>
-<div id="homeError" class="error"></div>
-</div>
-<div class="feature-row"><span>⚡ <b>Choose your pace</b></span><span>♟ <b>Up to 20 players per room</b></span><span>🏆 <b>Live leaderboard</b></span></div>
-</section>
-<section id="game" class="game hidden">
-<div class="game-top"><button id="leaveBtn" class="ghost">← Home</button><div class="room-chip">ROOM CODE <strong id="codeShow">----</strong><button id="copyBtn" title="Copy room code">▣</button><button id="inviteBtn" title="Share room invite">↗</button></div><span id="role" class="role">PLAYER</span></div>
-<div class="game-layout">
-<aside class="players-panel"><div class="panel-heading"><span>PLAYERS</span><span id="playerCount" class="count">0/20</span></div><div id="players" class="players"></div><div class="host-note">✦ Invite friends with your room code</div></aside>
-<section class="play-panel"><div class="round-line"><span id="statusPill" class="pill">WAITING ROOM</span><span id="roundLabel">READY WHEN YOU ARE</span></div>
-<div id="lobbyContent" class="lobby-content"><div class="big-icon">✦</div><h2>Build your squad.</h2><p>Share the room code with up to 19 friends. When at least two players are connected, the host can launch the game.</p><button id="startBtn" class="primary start">Start the game →</button><div id="gameOptions" class="lobby-settings">8 rounds · classic pace</div><div id="startHint" class="hint">Waiting for one more player…</div></div>
-<div id="questionContent" class="question-content hidden"><div class="timer-wrap"><div id="timerBar" class="timer-bar"></div></div><div id="category" class="category">GENERAL</div><h2 id="questionText">Question goes here?</h2><div id="answers" class="answers"></div><div id="answerHint" class="hint"></div></div>
-<div id="revealContent" class="reveal-content hidden"><div class="big-icon">✓</div><h2>Round complete!</h2><p id="revealText">The correct answer was…</p><p class="hint">Next round starting shortly.</p></div>
-<div id="finishedContent" class="finished-content hidden"><div class="big-icon">🏆</div><h2>Game over!</h2><p id="winnerText">Champion!</p><div id="finalPodium" class="final-podium"></div><button id="playAgainBtn" class="primary">Play another round ↻</button></div>
-<div id="gameError" class="error"></div></section>
-</div>
-</section>
-</main>
-<footer><span>ROOM RUSH © 2026</span><span>MADE FOR THE COMPETITIVE FRIEND GROUP</span></footer>
-<script src="/socket.io/socket.io.js"></script><script src="/app.js"></script>
-</body></html>
+  <div class="glow glow-a"></div>
+  <div class="glow glow-b"></div>
+  <div id="reactionContainer" class="floating-reactions-layer" pointer-events="none"></div>
+
+  <header>
+    <a class="brand" href="#">
+      <span class="brand-icon">RR</span>
+      <span>ROOM <b>RUSH</b><small>TRIVIA PARTY 2.0</small></span>
+    </a>
+    <div class="header-right">
+      <span class="live-dot"></span> REAL-TIME MULTIPLAYER
+      <button id="soundToggle" class="ghost sound-toggle" type="button" aria-pressed="true" title="Toggle game sounds">♪ SOUND ON</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- HOME SCREEN -->
+    <section id="home" class="home">
+      <div class="eyebrow"><span>✦</span> FRIENDS. QUESTIONS. GLORY.</div>
+      <h1>Think fast.<br><span>Play together.</span></h1>
+      <p class="intro">The high-intensity multiplayer trivia party. Create a room, challenge your friends or test your skills against our AI bot!</p>
+      
+      <div class="panel">
+        <label for="name">PLAYER NICKNAME</label>
+        <input id="name" maxlength="18" placeholder="Enter your nickname" value="" autocomplete="off">
+        
+        <div class="game-options">
+          <label for="rounds">ROUNDS
+            <select id="rounds">
+              <option value="5">Quick match · 5</option>
+              <option value="8" selected>Standard · 8</option>
+              <option value="12">Full match · 12</option>
+              <option value="16">Marathon · 16</option>
+            </select>
+          </label>
+          <label for="mode">PACE
+            <select id="mode">
+              <option value="classic" selected>Classic · 15 sec</option>
+              <option value="blitz">Blitz · 9 sec</option>
+              <option value="relaxed">Relaxed · 25 sec</option>
+            </select>
+          </label>
+          <label for="categorySelect">TOPIC
+            <select id="categorySelect">
+              <option value="all" selected>All Categories</option>
+              <option value="Science">Science & Tech</option>
+              <option value="Geography">Geography & World</option>
+              <option value="Nature">Nature & Animals</option>
+              <option value="General">General & Culture</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="home-actions">
+          <button id="createBtn" class="primary">＋ Create Room</button>
+          <div class="join-group">
+            <input id="roomCode" maxlength="4" placeholder="ROOM CODE" autocomplete="off">
+            <button id="joinBtn" class="secondary">Join ↗</button>
+          </div>
+        </div>
+        <div id="homeError" class="error"></div>
+      </div>
+
+      <div class="feature-row">
+        <span>⚡ <b>Dynamic Speed Bonus</b></span>
+        <span>👥 <b>Up to 20 players per room</b></span>
+        <span>🤖 <b>AI Solo / Practice Mode</b></span>
+        <span>🏆 <b>Live Leaderboard & Streaks</b></span>
+      </div>
+    </section>
+
+    <!-- GAME SCREEN -->
+    <section id="game" class="game hidden">
+      <div class="game-top">
+        <button id="leaveBtn" class="ghost">← Home</button>
+        <div class="room-chip">
+          ROOM CODE <strong id="codeShow">----</strong>
+          <button id="copyBtn" title="Copy room code">📋</button>
+          <button id="inviteBtn" title="Share room invite">↗</button>
+        </div>
+        <span id="role" class="role">PLAYER</span>
+      </div>
+
+      <div class="game-layout">
+        <!-- PLAYERS LEADERBOARD SIDEBAR -->
+        <aside class="players-panel">
+          <div class="panel-heading">
+            <span>LEADERBOARD</span>
+            <span id="playerCount" class="count">0/20</span>
+          </div>
+          <div id="players" class="players"></div>
+          
+          <div class="reactions-dock" title="Send live reaction">
+            <span class="dock-title">REACTIONS</span>
+            <div class="reactions-buttons">
+              <button class="reaction-btn" data-emote="🔥">🔥</button>
+              <button class="reaction-btn" data-emote="👏">👏</button>
+              <button class="reaction-btn" data-emote="😂">😂</button>
+              <button class="reaction-btn" data-emote="🧠">🧠</button>
+              <button class="reaction-btn" data-emote="💀">💀</button>
+              <button class="reaction-btn" data-emote="🎯">🎯</button>
+            </div>
+          </div>
+          
+          <div class="host-note">✦ Share code with up to 19 friends or practice with RushBot</div>
+        </aside>
+
+        <!-- MAIN GAME CONTENT AREA -->
+        <section class="play-panel">
+          <div class="round-line">
+            <span id="statusPill" class="pill">WAITING ROOM</span>
+            <span id="roundLabel">READY WHEN YOU ARE</span>
+          </div>
+
+          <!-- LOBBY VIEW -->
+          <div id="lobbyContent" class="lobby-content">
+            <div class="big-icon">✦</div>
+            <h2>Build your squad.</h2>
+            <p>Share the room code with up to 19 friends. When at least two players are in the room (or with an AI Bot), the host can launch the game!</p>
+            <div class="lobby-controls">
+              <button id="startBtn" class="primary start">Start the game →</button>
+              <button id="botBtn" class="secondary bot-toggle-btn" type="button">🤖 Add Practice Bot</button>
+            </div>
+            <div id="gameOptions" class="lobby-settings">8 rounds · classic pace</div>
+            <div id="startHint" class="hint">Waiting for one more player…</div>
+          </div>
+
+          <!-- QUESTION VIEW -->
+          <div id="questionContent" class="question-content hidden">
+            <div class="timer-wrap">
+              <div id="timerBar" class="timer-bar"></div>
+            </div>
+            
+            <div class="question-meta-row">
+              <div id="category" class="category">GENERAL</div>
+              <div class="lifelines-dock">
+                <button id="fiftyFiftyBtn" class="lifeline-btn" title="50:50 - Remove two wrong answers (Once per game)">50:50</button>
+                <button id="doubleDownBtn" class="lifeline-btn" title="Double Down - 2x Points if correct! (Once per game)">2× DBL</button>
+              </div>
+            </div>
+
+            <h2 id="questionText">Question goes here?</h2>
+            <div id="answers" class="answers"></div>
+            <div id="answerHint" class="hint"></div>
+          </div>
+
+          <!-- REVEAL VIEW -->
+          <div id="revealContent" class="reveal-content hidden">
+            <div id="revealIcon" class="big-icon">✓</div>
+            <h2 id="revealHeading">Round complete!</h2>
+            <p id="revealText">The correct answer was…</p>
+            <p class="hint">Next round starting shortly.</p>
+          </div>
+
+          <!-- FINISHED VIEW -->
+          <div id="finishedContent" class="finished-content hidden">
+            <div class="big-icon">🏆</div>
+            <h2>Game Over!</h2>
+            <p id="winnerText">Champion!</p>
+            <div id="finalPodium" class="final-podium"></div>
+            <button id="playAgainBtn" class="primary">Play Another Match ↺</button>
+          </div>
+
+          <div id="gameError" class="error"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>ROOM RUSH © 2026 · ADVANCED MULTIPLAYER</span>
+    <span>DESIGNED FOR THE COMPETITIVE SQUAD</span>
+  </footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

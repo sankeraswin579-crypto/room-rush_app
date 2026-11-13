@@ -1,6 +1,6 @@
 {
   "name": "room-rush-desktop",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Room Rush real-time multiplayer trivia game for desktop and browser",
   "main": "electron/main.js",
   "author": "Aswin Sankar P S",
@@ -13,11 +13,13 @@
   },
   "dependencies": {
     "express": "^4.22.3",
+    "helmet": "^8.3.0",
     "socket.io": "^4.8.4"
   },
   "devDependencies": {
     "electron": "^45.2.3",
-    "electron-builder": "^26.18.0"
+    "electron-builder": "^26.18.0",
+    "socket.io-client": "^4.8.4"
   },
   "build": {
     "appId": "com.aswinsankar.roomrush",
@@ -39,4 +41,3 @@
     "electron@45.2.3": true
   }
 }
-

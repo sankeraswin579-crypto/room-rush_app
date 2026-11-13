@@ -1,7 +1,10 @@
 const express = require("express");
 const http = require("http");
 const path = require("path");
+const crypto = require("crypto");
+const helmet = require("helmet");
 const { Server } = require("socket.io");
+const { createMemoryRoomStore } = require("./server/store/room-store");
 
 const QUESTIONS = [
   // Science & Tech
@@ -64,27 +67,51 @@ const QUESTIONS = [
   { q: "Which classical composer became deaf later in life?", a: ["Mozart", "Beethoven", "Bach", "Chopin"], correct: 1, category: "Music" }
 ];
 
-const rooms = new Map();
 const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const ROOM_CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
+const ROOM_CODE_LENGTH = 6;
+const ROOM_CODE_PATTERN = new RegExp(`^[${alphabet}]{${ROOM_CODE_LENGTH}}$`);
 const MAX_PLAYERS = 20;
 const GAME_MODES = Object.freeze({ classic: 15000, blitz: 9000, relaxed: 25000 });
 const ALLOWED_ROUNDS = new Set([5, 8, 12, 16]);
 const RECONNECT_GRACE_MS = 30000;
 const ROOM_IDLE_MS = 5 * 60 * 1000;
+const FINISHED_ROOM_TTL_MS = 5 * 60 * 1000;
 const PLAYER_TOKEN_PATTERN = /^[a-f0-9]{64}$/;
+const ALLOWED_EMOTES = new Set(["\u{1F525}", "\u{1F44F}", "\u{1F602}", "\u{1F9E0}", "\u{1F480}", "\u{1F3AF}"]);
+const REACTION_LIMIT = 6;
+const REACTION_WINDOW_MS = 10 * 1000;
 
 const normalizeName = value => typeof value === "string" ? value.trim().slice(0, 18) || "Player" : "Player";
-const makePlayerToken = () => require("crypto").randomBytes(32).toString("hex");
+const makePlayerToken = () => crypto.randomBytes(32).toString("hex");
 
-const makeCode = () => {
+// Codes are generated with crypto.randomInt so they are not predictable from
+// previously observed codes, and are long enough that enumerating the space is
+// not practical. 32^6 is roughly 1.07 billion combinations.
+// Fisher-Yates. Unbiased, unlike sort(() => Math.random() - 0.5), which
+// systematically favours some positions over others.
+const shuffle = items => {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = crypto.randomInt(i + 1);
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+};
+
+const makeCode = roomStore => {
   let code;
-  do { code = Array.from({length: 4}, () => alphabet[Math.floor(Math.random()*alphabet.length)]).join(""); }
-  while (rooms.has(code));
+  do { code = Array.from({length: ROOM_CODE_LENGTH}, () => alphabet[crypto.randomInt(alphabet.length)]).join(""); }
+  while (roomStore.has(code));
   return code;
 };
 
-const publicRoom = (room, playerId) => ({
+// playerId is the viewer. Lifeline state is only ever included for the player
+// who owns it; everyone else sees the neutral defaults. This payload is built
+// per seat by emitRoom, never broadcast to the whole room.
+const publicRoom = (room, playerId) => {
+  const isSelf = p => playerId !== null && playerId !== undefined && p.id === playerId;
+
+  return {
   code: room.code, hostId: room.hostId, status: room.status, round: room.round,
   totalRounds: room.totalRounds, deadline: room.deadline,
   mode: room.mode, roundDuration: room.roundDuration,
@@ -100,17 +127,28 @@ const publicRoom = (room, playerId) => ({
     hasAnswered:p.answered !== null,
     connected: p.connected,
     isBot: Boolean(p.isBot),
-    doubled: Boolean(p.doubled),
-    hiddenOptions: p.hiddenOptions || []
+    doubled: isSelf(p) && Boolean(p.doubled),
+    hiddenOptions: isSelf(p) ? (p.hiddenOptions || []) : []
   })),
   question: ["question", "reveal"].includes(room.status) ? { q: room.current.q, a: room.current.a, category: room.current.category } : null,
   reveal: room.status === "reveal" ? { correct: room.current.correct, explanation: "The correct answer is highlighted below." } : null,
   myId: playerId || null
-});
+  };
+};
 
-function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0" } = {}) {
+function startServer({
+  port = Number(process.env.PORT) || 3000,
+  host = "0.0.0.0",
+  roomStore = createMemoryRoomStore(),
+  finishedRoomTtlMs = FINISHED_ROOM_TTL_MS
+} = {}) {
+  const rooms = roomStore;
   const app = express();
   const server = http.createServer(app);
+
+  // Render terminates TLS in front of the app, so the client address for rate
+  // limiting comes from X-Forwarded-For. Exactly one proxy hop.
+  app.set("trust proxy", 1);
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || "https://room-rush-app.onrender.com,http://localhost:3000,http://127.0.0.1:3000")
     .split(",").map(origin => origin.trim()).filter(Boolean);
 
@@ -126,10 +164,53 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
     pingTimeout: 20000
   });
 
-  app.use(express.static(path.join(__dirname, "public")));
-  app.get("/health", (_req, res) => res.json({ ok: true, game: "Room Rush", version: "1.0.3" }));
+  // The client ships no inline scripts or inline style attributes, so the
+  // policy can stay strict. Socket.IO needs connect-src to cover ws/wss.
+  // upgrade-insecure-requests is production-only: on plain http://localhost it
+  // would rewrite asset requests to https and break local development.
+  const isProduction = process.env.NODE_ENV === "production";
 
-  function emitRoom(room) { io.to(room.code).emit("state", publicRoom(room)); }
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        imgSrc: ["'self'", "data:"],
+        fontSrc: ["'self'", "data:"],
+        connectSrc: ["'self'", "ws:", "wss:"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        upgradeInsecureRequests: isProduction ? [] : null
+      }
+    },
+    crossOriginEmbedderPolicy: false
+  }));
+  app.use(express.static(path.join(__dirname, "public")));
+
+  // Public liveness data only: no hostnames, no environment values, no memory
+  // figures. Room count is a game statistic, not internal infrastructure.
+  app.get("/health", (_req, res) => res.json({
+    ok: true,
+    game: "Room Rush",
+    version: "1.0.4",
+    uptimeSeconds: Math.round(process.uptime()),
+    rooms: rooms.size
+  }));
+
+  // One payload per seat, because the payload now carries private lifeline
+  // state. player.id is the socket id, so the live socket is a direct lookup;
+  // a player inside the reconnect grace window has no socket and gets their
+  // state from the rejoin ack instead.
+  function emitRoom(room) {
+    for (const player of room.players.values()) {
+      const socket = io.sockets.sockets.get(player.id);
+      if (!socket) continue;
+      socket.emit("state", publicRoom(room, player.id));
+    }
+  }
 
   function rateLimit(socket, event, callback, limit, windowMs = 60000) {
     const now = Date.now();
@@ -148,6 +229,34 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
     return true;
   }
 
+  // Per-address limiter. The per-socket limiter above is trivially bypassed by
+  // reconnecting, which matters for room codes because a code is the only
+  // access control on joining a lobby.
+  const addressBuckets = new Map();
+
+  function clientAddress(socket) {
+    const forwarded = socket.handshake.headers["x-forwarded-for"];
+    if (typeof forwarded === "string" && forwarded.length) return forwarded.split(",")[0].trim();
+    return socket.handshake.address || "unknown";
+  }
+
+  function addressRateLimit(socket, event, limit, windowMs = 60000) {
+    const now = Date.now();
+    const address = clientAddress(socket);
+
+    // Bound the map so it cannot grow without limit on a busy or hostile host.
+    if (addressBuckets.size > 10000) addressBuckets.clear();
+
+    const bucket = addressBuckets.get(address) || { startedAt: now, count: 0 };
+    if (now - bucket.startedAt >= windowMs) {
+      bucket.startedAt = now;
+      bucket.count = 0;
+    }
+    bucket.count += 1;
+    addressBuckets.set(address, bucket);
+    return bucket.count <= limit;
+  }
+
   function scheduleRoomCleanup(room, delay = ROOM_IDLE_MS) {
     clearTimeout(room.cleanupTimer);
     room.cleanupTimer = setTimeout(() => {
@@ -155,9 +264,25 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
       if ([...room.players.values()].some(p => p.connected && !p.isBot)) return;
       clearTimeout(room.timer);
       clearTimeout(room.botTimer);
+      clearTimeout(room.reapTimer);
       rooms.delete(room.code);
     }, delay);
     room.cleanupTimer.unref?.();
+  }
+
+  // A finished room is deleted on a fixed timer whether or not players are
+  // still connected. Without this the results screen keeps the whole room,
+  // its questions and its player objects resident until the last player leaves.
+  function scheduleFinishedRoomReap(room, delay = finishedRoomTtlMs) {
+    clearTimeout(room.reapTimer);
+    room.reapTimer = setTimeout(() => {
+      if (rooms.get(room.code) !== room) return;
+      clearTimeout(room.timer);
+      clearTimeout(room.botTimer);
+      clearTimeout(room.cleanupTimer);
+      rooms.delete(room.code);
+    }, delay);
+    room.reapTimer.unref?.();
   }
 
   function removePlayer(room, player) {
@@ -184,6 +309,7 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
     room.status = "finished";
     room.deadline = null;
     emitRoom(room);
+    scheduleFinishedRoomReap(room);
   }
 
   function reveal(room) {
@@ -254,7 +380,7 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
       const totalRounds = ALLOWED_ROUNDS.has(payload.rounds) ? payload.rounds : 8;
       const mode = Object.hasOwn(GAME_MODES, payload.mode) ? payload.mode : "classic";
       const roundDuration = GAME_MODES[mode];
-      const code = makeCode();
+      const code = makeCode(rooms);
       const id = socket.id;
       const playerToken = makePlayerToken();
 
@@ -266,18 +392,17 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
 
       const room = {
         code, hostId: id, status: "lobby", round: 0, totalRounds, mode, roundDuration,
-        deadline: null, timer: null, botTimer: null, cleanupTimer: null,
+        deadline: null, timer: null, botTimer: null, cleanupTimer: null, reapTimer: null,
         players: new Map([[id, {
           id, token: playerToken, name: clean, score: 0, streak: 0, bestStreak: 0,
           answered: null, connected: true, disconnectTimer: null,
           lifelines: { fiftyFifty: true, doubleDown: true }
         }]]),
-        questions: questionPool.sort(() => Math.random() - .5).slice(0, totalRounds),
+        questions: shuffle(questionPool).slice(0, totalRounds),
         current: null
       };
 
       rooms.set(code, room);
-      socket.data.playerToken = playerToken;
       socket.join(code);
       cb({ ok: true, playerToken, state: publicRoom(room, id) });
       emitRoom(room);
@@ -300,7 +425,6 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
       player.disconnectTimer = null;
       room.players.set(player.id, player);
       if (!room.hostId || room.hostId !== player.id && ![...room.players.values()].some(p => p.id === room.hostId && p.connected && !p.isBot)) room.hostId = player.id;
-      socket.data.playerToken = token;
       socket.join(code);
       cb({ ok: true, state: publicRoom(room, player.id) });
       emitRoom(room);
@@ -308,11 +432,15 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
 
     socket.on("joinRoom", (payload, cb = () => {}) => {
       if (!rateLimit(socket, "joinRoom", cb, 12)) return;
+      if (!addressRateLimit(socket, "joinRoom", 120)) return cb({ ok:false, error:"Too many join attempts from this network. Please wait a minute." });
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) return cb({ ok:false, error:"Invalid room details." });
       const code = typeof payload.code === "string" ? payload.code.trim().toUpperCase() : "";
-      if (!ROOM_CODE_PATTERN.test(code)) return cb({ ok:false, error:"Room codes must be 4 letters or numbers. Check the code and try again." });
+      if (!ROOM_CODE_PATTERN.test(code)) return cb({ ok:false, error:"Room codes must be 6 letters or numbers. Check the code and try again." });
       const room = rooms.get(code);
       if (!room) return cb({ ok:false, error:"Room not found. Check the code and try again." });
+      // A socket that already holds a seat must not rejoin the same room: it
+      // would overwrite its own entry with a fresh token and a new name.
+      if (room.players.has(socket.id)) return cb({ ok:false, error:"You are already in this room." });
       if (room.status !== "lobby") return cb({ ok:false, error:"This game has already started." });
       for (const offlinePlayer of [...room.players.values()]) {
         if (!offlinePlayer.connected && !offlinePlayer.isBot) removePlayer(room, offlinePlayer);
@@ -326,7 +454,6 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
         answered: null, connected: true, disconnectTimer: null,
         lifelines: { fiftyFifty: true, doubleDown: true }
       });
-      socket.data.playerToken = playerToken;
       socket.join(code);
       cb({ ok: true, playerToken, state: publicRoom(room, id) });
       emitRoom(room);
@@ -334,8 +461,11 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
 
     // Add / Toggle AI Bot for solo practice
     socket.on("toggleBot", (payload, cb = () => {}) => {
+      if (!rateLimit(socket, "toggleBot", cb, 10)) return;
       if (!payload || typeof payload.code !== "string") return cb({ ok:false, error:"Invalid code." });
-      const room = rooms.get(payload.code.trim().toUpperCase());
+      const code = payload.code.trim().toUpperCase();
+      if (!ROOM_CODE_PATTERN.test(code)) return cb({ ok:false, error:"Invalid room code." });
+      const room = rooms.get(code);
       if (!room || room.hostId !== socket.id) return cb({ ok:false, error:"Only the host can add or remove AI bots." });
       if (room.status !== "lobby") return cb({ ok:false, error:"Cannot change bots once game has started." });
 
@@ -359,23 +489,29 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
         });
       }
       emitRoom(room);
-      cb({ ok: true, hasBot: ![...room.players.values()].some(p => p.isBot) });
+      cb({ ok: true, hasBot: [...room.players.values()].some(p => p.isBot) });
     });
 
     // Live Emoji Reaction Broadcast
     socket.on("reaction", (payload, cb = () => {}) => {
-      if (!payload || typeof payload.code !== "string" || typeof payload.emote !== "string") return;
+      // This handler is a fan-out: every accepted reaction is broadcast to up
+      // to 20 sockets, so it must be the most tightly limited one on the server.
+      if (!rateLimit(socket, "reaction", cb, REACTION_LIMIT, REACTION_WINDOW_MS)) return;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) || typeof payload.code !== "string" || typeof payload.emote !== "string") {
+        return cb({ ok: false, error: "Invalid reaction." });
+      }
       const room = rooms.get(payload.code.trim().toUpperCase());
-      if (!room) return;
+      if (!room) return cb({ ok: false, error: "Room not found." });
       const player = room.players.get(socket.id);
-      if (!player) return;
-      const cleanEmote = payload.emote.slice(0, 4);
-      io.to(room.code).emit("reaction", { name: player.name, emote: cleanEmote });
-      if (typeof cb === "function") cb({ ok: true });
+      if (!player) return cb({ ok: false, error: "You are not in this room." });
+      if (!ALLOWED_EMOTES.has(payload.emote)) return cb({ ok: false, error: "That reaction is not available." });
+      io.to(room.code).emit("reaction", { name: player.name, emote: payload.emote });
+      cb({ ok: true });
     });
 
     // Lifeline: 50-50 or Double Down
     socket.on("useLifeline", (payload, cb = () => {}) => {
+      if (!rateLimit(socket, "useLifeline", cb, 6)) return;
       if (!payload || typeof payload.code !== "string" || !["fiftyFifty", "doubleDown"].includes(payload.type)) {
         return cb({ ok: false, error: "Invalid lifeline request." });
       }
@@ -389,8 +525,7 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
 
       if (payload.type === "fiftyFifty") {
         const correctIdx = room.current.correct;
-        const wrongIndices = [0, 1, 2, 3].filter(i => i !== correctIdx);
-        wrongIndices.sort(() => Math.random() - .5);
+        const wrongIndices = shuffle([0, 1, 2, 3].filter(i => i !== correctIdx));
         const toHide = wrongIndices.slice(0, 2);
         p.hiddenOptions = toHide;
         cb({ ok: true, type: "fiftyFifty", hiddenOptions: toHide });
@@ -493,4 +628,4 @@ function startServer({ port = Number(process.env.PORT) || 3000, host = "0.0.0.0"
 
 if (require.main === module) startServer().then(({port}) => console.log(`Room Rush server running at http://localhost:${port}`));
 
-module.exports = { startServer, ROOM_CODE_PATTERN, MAX_PLAYERS, RECONNECT_GRACE_MS };
+module.exports = { startServer, createMemoryRoomStore, ROOM_CODE_PATTERN, ROOM_CODE_LENGTH, MAX_PLAYERS, RECONNECT_GRACE_MS };

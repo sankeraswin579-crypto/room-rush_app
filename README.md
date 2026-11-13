@@ -99,7 +99,7 @@ The web interface can be accessed locally during development, making it easier t
 
 ### 7. Room validation and disconnect recovery
 
-The server accepts only four-character room codes from the generated code alphabet, checks room state and capacity before joining, and verifies host identity and player membership for game actions. Each player receives a random session token. If a socket drops, that player can reconnect to their seat for 30 seconds with their score and submitted answer preserved. A disconnected host's role transfers to the other connected player. Unanswered rounds continue when all remaining connected players have answered, and abandoned rooms are cleaned up.
+The server accepts only six-character room codes from the generated code alphabet, checks room state and capacity before joining, and verifies host identity and player membership for game actions. Each player receives a random session token. If a socket drops, that player can reconnect to their seat for 30 seconds with their score and submitted answer preserved. A disconnected host's role transfers to the other connected player. Unanswered rounds continue when all remaining connected players have answered, and abandoned rooms are cleaned up.
 
 ## 💻 Installation
 
